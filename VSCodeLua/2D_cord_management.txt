@@ -1,0 +1,88 @@
+-- illinois RoboticSystems ch3 excersize 12
+-- 2D coordinate management system
+
+
+-- multiply 2 matrices
+function matrix_mult(a, b)
+    local result = {}
+    for i = 1, #a[1] do
+        result[i] = {}
+        for j = 1, #b do
+            result[i][j] = result[i][j] + a[i][j]*b[j][i]
+        end
+    end
+    return result
+end
+
+
+function matrix_vector_mult(m, v)
+    local result = {}
+    local vector_transpose = {}
+    for i = 1, #v do
+        vector_transpose[i] = {v[i]}
+    end
+    return matrix_mult(m, vector_transpose)
+end
+
+
+function matrix_inverse(m)
+
+
+
+point = {}
+point.__index = point
+
+function point.new(cords, frame) -- cords has x, y, and 1 for homogenous coordinates
+    local instance = {}
+    setmetatable(instance, point)
+    instance.cords = cords
+    instance.frame = frame
+    return instance
+end
+
+-- converts a point's coordinates to a new frame
+function point.to(newFrame)
+    matrix_vector_mult(named_frames[newFrame], self.cords)
+    return temp
+end
+
+
+directional = {}
+directional.__index = directional
+
+function directional.new(cords, frame) -- cords has x, y and 0 for homogeneous coordinates
+    local instance = {}
+    setmetatable(instance, directional)
+    instance.cords = cords
+    instance.frame = frame
+    return instance
+end
+
+
+function directional.to(newFrame)
+    matrix_vector_mult(named_frames[newFrame], self.cords)
+    return temp
+end
+
+
+named_frames = {}
+
+frame = {}
+frame.__index = frame
+
+function frame.new(name, origin, X, Y)  
+    local instance = {}
+    setmetatable(instance, frame)
+    named_frames[name] = instance
+    instance.transform = {}
+    for i = 1, #X do
+        instance.transform[i] = {X[i], Y[i], origin[i]}
+    end
+    instance.transform[#X + 1] = {0, 0, 1}
+    instance.origin = origin
+    return instance
+end
+
+
+local world = frame.new("world", {0, 0}, {1, 0}, {0, 1})
+print(named_frames["world"].transform[1][1]) -- Should print 1 (x-axis direction in world frame)
