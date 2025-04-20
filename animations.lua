@@ -6,7 +6,7 @@ keyframe.__index = keyframe
 function keyframe:New(position, rotation, time, ease)
     local self = setmetatable({}, keyframe)
     self.position = position or {0, 0, 0}
-    self.rotation = rotation or 0
+    self.rotation = rotation or RotationMatrix(0, {0, 0, 1})
     self.time = time or 0
     self.ease = ease or {1, 1}
     return self
