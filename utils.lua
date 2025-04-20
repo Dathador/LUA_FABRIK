@@ -12,83 +12,94 @@ function MatrixMult(a, b)
     return result
 end
 
-function Distance(p1, p2)
+function MatrixVectorMult(m, v)
+    local result = {}
+    for i = 1, #m do
+        result[i] = 0
+        for j = 1, #v do
+            result[i] = result[i] + m[i][j] * v[j]
+        end
+    end
+    return result
+end
+
+function Distance(v1, v2)
     local squared_distance = 0
-    for i = 1, #p1 do
-        squared_distance = squared_distance + (p1[i] - p2[i])^2
+    for i = 1, #v1 do
+        squared_distance = squared_distance + (v1[i] - v2[i])^2
     end
     return math.sqrt(squared_distance)
 end
 
-function Subtract(p1, p2)
+function Subtract(v1, v2)
     local result = {}
-    for i = 1, #p1 do
-        result[i] = p1[i] - p2[i]
+    for i = 1, #v1 do
+        result[i] = v1[i] - v2[i]
     end
     return result
 end
 
-function Add(p1, p2)
+function Add(v1, v2)
     local result = {}
-    for i = 1, #p1 do
-        result[i] = p1[i] + p2[i]
+    for i = 1, #v1 do
+        result[i] = v1[i] + v2[i]
     end
     return result
 end
 
-function Length(p)
+function Length(v)
     local squared_length = 0
-    for i = 1, #p do
-        squared_length = squared_length + p[i]^2
+    for i = 1, #v do
+        squared_length = squared_length + v[i]^2
     end
     return math.sqrt(squared_length)
 end
 
-function Normalize(p)
-    local length = Length(p)
+function UnitVector(v)
+    local length = Length(v)
     if length == 0 then
         return {0, 0, 0}
     end
     local result = {}
-    for i = 1, #p do
-        result[i] = p[i] / length
+    for i = 1, #v do
+        result[i] = v[i] / length
     end
     return result
 end
 
-function Multiply(p, scalar)
+function Multiply(v, scalar)
     local result = {}
-    for i = 1, #p do
-        result[i] = p[i] * scalar
+    for i = 1, #v do
+        result[i] = v[i] * scalar
     end
     return result
 end
 
-function Dot(p1, p2)
+function Dot(v1, v2)
     local result = 0
-    for i = 1, #p1 do
-        result = result + p1[i] * p2[i]
+    for i = 1, #v1 do
+        result = result + v1[i] * v2[i]
     end
     return result
 end
 
-function Cross(p1, p2)
-    if #p1 == 2 and #p2 == 2 then
-        return p1[1] * p2[2] - p1[2] * p2[1]
-    elseif #p1 == 3 and #p2 == 3 then
+function Cross(v1, v2)
+    if #v1 == 2 and #v2 == 2 then
+        return v1[1] * v2[2] - v1[2] * v2[1]
+    elseif #v1 == 3 and #v2 == 3 then
         return {
-            p1[2] * p2[3] - p1[3] * p2[2],
-            p1[3] * p2[1] - p1[1] * p2[3],
-            p1[1] * p2[2] - p1[2] * p2[1]
+            v1[2] * v2[3] - v1[3] * v2[2],
+            v1[3] * v2[1] - v1[1] * v2[3],
+            v1[1] * v2[2] - v1[2] * v2[1]
         }
     else
         error("Cross product is only defined for 2D or 3D vectors")
     end
 end
 
-function Angle(p1, p2)
-    local dot_product = Dot(p1, p2)
-    local length_product = Length(p1) * Length(p2)
+function Angle(v1, v2)
+    local dot_product = Dot(v1, v2)
+    local length_product = Length(v1) * Length(v2)
     if length_product == 0 then
         return 0
     end
@@ -121,9 +132,9 @@ function RotateAround(vector, angle, axis, center)
     return Add(rotated, center)
 end
 
-function RotatePointAroundAxis(p, angle, axis, center)
+function RotatePointAroundAxis(v, angle, axis, center)
     -- Rotate point p around axis through center by angle
-    local v = Subtract(p, center)
+    local v = Subtract(v, center)
     local v_rot = RotateVector(v, angle, axis)
     return Add(center, v_rot)
 end
