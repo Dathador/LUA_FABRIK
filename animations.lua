@@ -1,6 +1,6 @@
 require("utils")
 
-keyframe = {}
+local keyframe = {}
 keyframe.__index = keyframe
 
 function keyframe:New(position, rotation, time, ease)

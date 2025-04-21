@@ -13,6 +13,12 @@ function FABRIK(arm, target, maxIterations, tolerance)
     local iterations = 0
     local error = math.huge
 
+    -- save inital positions of the arm
+    local initialPositions = {}
+    for i = 1, #arm do
+        initialPositions[i] = {x = arm[i].position[1], y = arm[i].position[2], z = arm[i].position[3]}
+    end
+
     while (error > tolerance and iterations < maxIterations) do
         -- place the end effector at the target
         if target.rotation ~= nil then
@@ -27,32 +33,33 @@ function FABRIK(arm, target, maxIterations, tolerance)
             arm[i].position = Add(arm[i + 1].position, Multiply(direction, arm[i].length))
         end
 
-        local rotation = RotationMatrix(0, {1, 1, 1}) -- identity matrix
         -- backwards reaching
         for i = 1, #arm - 1 do
-            rotation = MatrixMult(rotation, arm[i].rotation)
-            local axis = UnitVector(MatrixVectorMult(rotation, arm[i].axisOfRotation))
-
-            -- project the next bone onto the plane perpendicular to the axis of the current bone
-            v = Subtract(arm[i + 1].position, arm[i].position)
-            local projection = Multiply(axis, Dot(v, axis))
-            local perpendicular = Subtract(v, projection)
-
-            local direction = UnitVector(perpendicular)
+            local direction = UnitVector(Subtract(arm[i + 1].position, arm[i].position))
             arm[i + 1].position = Add(arm[i].position, Multiply(direction, arm[i].length))
+        end
 
-            arm[i].initialDirection = UnitVector(Subtract(arm[i + 1].position, arm[i].position))
+        -- Enforce joint constraints
+        for i = 1, #arm - 1 do
+            local a = MatrixVectorMult(arm[i].rotation, arm[i].axisOfRotation)  -- Axis of rotation for joint i
+            local v = Subtract(arm[i + 1].position, arm[i].position)  -- Current bone direction
+            local dot = Dot(v, a)
+            local a_magnitude_sq = Dot(a, a)  -- Should be 1 if a is normalized, but compute for generality
 
-            local angle = Angle(arm[i].initialDirection, direction)
-            local clampedAngle = Clamp(angle, arm[i].minAngle, arm[i].maxAngle)
-            if angle ~= clampedAngle then
-                local residualAngle = angle - clampedAngle
-                arm[i + 1].position = RotateAround(arm[i + 1].position, residualAngle, axis, arm[i].position)
+            -- Project v onto the plane perpendicular to a
+            local proj_v = Subtract(v, Multiply(a, dot / a_magnitude_sq))
+            local proj_magnitude = Length(proj_v)
+
+            if proj_magnitude > 0 then
+                -- Adjust position to lie on the plane and maintain length
+                local direction = UnitVector(proj_v)
+                arm[i + 1].position = Add(arm[i].position, Multiply(direction, arm[i].length))
+            else
+                -- Rare case: v is parallel to a, projection is zero
+                -- For now, leave position unchanged or set a default (e.g., along x-axis in plane)
+                -- Here, we’ll skip adjustment to avoid division by zero
+                print("Warning: Joint " .. i + 1 .. " constraint projection failed")
             end
-
-            -- update the rotation of the current bone
-            arm[i].rotation = RotationMatrix(clampedAngle, axis)
-            arm[i].axisOfRotation = axis
         end
 
         error = Distance(arm[#arm].position, target.position)

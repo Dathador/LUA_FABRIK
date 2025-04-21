@@ -106,6 +106,32 @@ function Angle(v1, v2)
     return math.acos(dot_product / length_product)
 end
 
+function ProjectToPlane(v, normal)
+    return Subtract(v, Multiply(normal, Dot(v, normal)))
+end
+
+function SignedAngleAroundAxis(v1, v2, axis)
+    -- Project v1 and v2 onto the plane perpendicular to axis
+    local v1_proj = ProjectToPlane(v1, axis)
+    local v2_proj = ProjectToPlane(v2, axis)
+
+    -- Check for degenerate cases (vectors aligned with axis)
+    local len_v1_proj = Length(v1_proj)
+    local len_v2_proj = Length(v2_proj)
+    if len_v1_proj < 1e-6 or len_v2_proj < 1e-6 then
+        return 0 -- Angle undefined; no adjustment needed
+    end
+
+    -- Normalize the projections
+    local u1 = Multiply(v1_proj, 1 / len_v1_proj)
+    local u2 = Multiply(v2_proj, 1 / len_v2_proj)
+
+    -- Compute signed angle using atan2
+    local cross = Cross(u1, u2)
+    local theta = math.atan(Dot(cross, axis), Dot(u1, u2))
+    return theta
+end
+
 function RotationMatrix(angle, axis)
     local cos_angle = math.cos(angle)
     local sin_angle = math.sin(angle)

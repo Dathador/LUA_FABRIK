@@ -7,13 +7,13 @@ require "animations"
 -- positive rotation clockwise, negative counter clockwise
 
 local target = {
-    position = {2, 8, 5},
+    position = {2, 5, 7},
     rotation = nil
 }
 
 local arm = {
-    bone:New({ 0, 0, 0}, RotationMatrix(0, {0, 0, 1}), {0, 1, 0}, -math.pi, math.pi, 4),
-    bone:New({ 4, 0, 0}, RotationMatrix(0, {0, 0, 1}), {0, 0, 1}, -math.pi, math.pi, 4),
+    bone:New({ 0, 0, 0}, RotationMatrix(0, {0, 0, 1}), {0, 1, 0}, -math.pi, math.pi, 6),
+    bone:New({ 4, 0, 0}, RotationMatrix(0, {0, 0, 1}), {0, 0, 1}, -math.pi, math.pi, 6),
     bone:New({ 8, 0, 0}, RotationMatrix(0, {0, 0, 1}), {0, 1, 0}, -math.pi, math.pi, 0)
 }
 
@@ -26,9 +26,6 @@ function main()
     for i = 1, #arm do
         print("Joint " .. i .. ": (" .. arm[i].position[1] .. ", " .. arm[i].position[2] .. ", " .. arm[i].position[3] .. ")")
     end
-    print("Axis of rotation " .. "(" .. arm[2].axisOfRotation[1] .. ", " .. arm[2].axisOfRotation[2] .. ", " .. arm[2].axisOfRotation[3] .. ")")
-
-    print()
 end
 
 main()
