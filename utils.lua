@@ -1,3 +1,11 @@
+function IdentityMatrix()
+    return {
+        {1, 0, 0},
+        {0, 1, 0},
+        {0, 0, 1}
+    }
+end
+
 function MatrixMult(a, b)
     local result = {}
     for i = 1, #a do
@@ -106,8 +114,35 @@ function Angle(v1, v2)
     return math.acos(dot_product / length_product)
 end
 
-function ProjectToPlane(v, normal)
-    return Subtract(v, Multiply(normal, Dot(v, normal)))
+function PerpendicularVector(v)
+    if math.abs(v[1]) > math.abs(v[3]) then
+        return {-v[2], v[1], 0}
+    else
+        return {0, -v[3], v[2]}
+    end
+end
+
+-- Function to compute rotation matrix from two vectors
+function RotationFromTwoVectors(v1, v2)
+    local len1 = Length(v1)
+    local len2 = Length(v2)
+    if len1 == 0 or len2 == 0 then
+        return IdentityMatrix()
+    end
+    local dot = Dot(v1, v2)
+    local cos_theta = dot / (len1 * len2)
+    if math.abs(cos_theta - 1) < 1e-6 then
+        return IdentityMatrix()
+    elseif math.abs(cos_theta + 1) < 1e-6 then
+        -- 180 degree rotation
+        local perp = PerpendicularVector(v1)
+        return RotationMatrix(math.pi, perp)
+    else
+        local axis = Cross(v1, v2)
+        axis = UnitVector(axis)
+        local angle = math.acos(cos_theta)
+        return RotationMatrix(angle, axis)
+    end
 end
 
 function SignedAngleAroundAxis(v1, v2, axis)
@@ -165,8 +200,17 @@ function RotatePointAroundAxis(v, angle, axis, center)
     return Add(center, v_rot)
 end
 
+function ProjectToPlane(v, normal)
+    return Subtract(v, Multiply(normal, Dot(v, normal)))
+end
+
 function Clamp(value, min, max)
     return math.max(min, math.min(value, max))
+end
+
+function round(num, decimal_places)
+    local mult = 10^(decimal_places or 0)
+    return math.floor(num * mult + 0.5) / mult
 end
 
 -- function to produce a smoth transition between two values
