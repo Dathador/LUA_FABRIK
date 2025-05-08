@@ -27,33 +27,23 @@ function FABRIK(arm, target, maxIterations, tolerance)
         end
 
         -- forwards reaching
-        -- print("\n Forwards step")
         for i = #arm -1, 2, -1 do
             local direction = UnitVector(Subtract(arm[i].position, arm[i + 1].position))
             arm[i].position = Add(arm[i + 1].position, Multiply(direction, arm[i].length))
         end
 
-        -- print bone positions
-        -- for i = 1, #arm do
-        --     print("Bone " .. i .. " (" .. arm[i].position[1] .. ", " .. arm[i].position[2] .. ", " .. arm[i].position[3] .. ")")
-        -- end
-
 
         -- backwards reaching
-        -- print("\n Backwards step")
         local rotation = IdentityMatrix()
         for i = 1, #arm - 1 do
-            -- local direction = UnitVector(Subtract(arm[i + 1].position, arm[i].position))
-            -- arm[i + 1].position = Add(arm[i].position, Multiply(direction, arm[i].length))
-
             local v1 = Subtract(arm[i + 1].position, arm[i].position)
-            -- print("Rotating axis " .. arm[i].axisOfRotation[1] .. ", " .. arm[i].axisOfRotation[2] .. ", " .. arm[i].axisOfRotation[3])
             local normal = MatrixVectorMult(rotation, arm[i].axisOfRotation)
-            -- print("Projecting arm " .. i + 1 .. " onto plane with normal " .. normal[1] .. ", " .. normal[2] .. ", " .. normal[3])
-            local v2 = UnitVector(ProjectToPlane(v1, normal))
-            arm[i + 1].position = Add(arm[i].position, Multiply(v2, arm[i].length))
 
+            local v2 = UnitVector(ProjectToPlane(v1, normal))
+
+            local rotatedInitialDirection = MatrixVectorMult(rotation, arm[i].initalDirection)
             local angle = SignedAngleAroundAxis(v2, MatrixVectorMult(rotation, arm[i].initalDirection), arm[i].axisOfRotation)
+
             local constrainedAngle = Clamp(angle, arm[i].minAngle, arm[i].maxAngle)
             
             -- If the angle was constrained, we need to recalculate v2
@@ -62,14 +52,12 @@ function FABRIK(arm, target, maxIterations, tolerance)
                 local constrainedDirection = RotateVector(rotatedInitialDirection, constrainedAngle, normal)
                 v2 = UnitVector(constrainedDirection)
                 
-                -- Update the position of the next joint based on the constrained angle
-                arm[i + 1].position = Add(arm[i].position, Multiply(v2, arm[i].length))
             end
-            -- print("Angle " .. i .. ": " .. angle .. " radians")
-            -- print("between " .. arm[i].axisOfRotation[1] .. ", " .. arm[i].axisOfRotation[2] .. ", " .. arm[i].axisOfRotation[3] .. " and " .. v2[1] .. ", " .. v2[2] .. ", " .. v2[3] .. " on axis " .. normal[1] .. ", " .. normal[2] .. ", " .. normal[3])
 
-            arm[i].rotation = RotationMatrix(-clampedAngle, arm[i].axisOfRotation)
+            -- Update the position of the next joint based on the constrained angle
+            arm[i + 1].position = Add(arm[i].position, Multiply(v2, arm[i].length))
 
+            arm[i].rotation = RotationMatrix(constrainedAngle, arm[i].axisOfRotation)
 
             rotation = MatrixMult(rotation, arm[i].rotation)
         end
@@ -82,12 +70,21 @@ function FABRIK(arm, target, maxIterations, tolerance)
         previousError = error
         error = Distance(arm[#arm].position, target.position)
         print("Error: " .. error)
+
         if math.abs(error - previousError) < epsilon then
             print("FABRIK converged to a local minimum")
             break
         end
-        -- print()
+
         iterations = iterations + 1
+    end
+
+    -- Convert all angles to degrees for output
+    for i = 1, #arm - 1 do
+        -- Convert to degrees in range -180 to 180
+        local angleDegrees = (arm[i].currentAngle or 0) * (180 / math.pi)
+        arm[i].angleDegrees = angleDegrees
+        print("Joint " .. i .. " angle: " .. angleDegrees .. " degrees")
     end
 
     print("FABRIK iterations: " .. iterations)
