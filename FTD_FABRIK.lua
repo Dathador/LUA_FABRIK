@@ -8,11 +8,36 @@ Tick = 0
 
 local startPosistion = {x = -4, y = 2}
 local endPosition = {x = -2, y = 15}
-local arm = {
-    Joint:New( 0, 0, -180,  180, 9),
-    Joint:New( 0, 0,    0,  180, 9),
-    Joint:New( 0, 0,    0,    0, 0)
-}
+
+
+function buildArm(I)
+    local jointNames = {
+        shoulder1 = true,
+        shoulder2 = true,
+        shoulder3 = true,
+        elbow1 = true,
+        elbow2 = true
+    }
+
+    -- get a list of the named spinBlocks
+    local spinBlocks = {}
+    for i = 0, I:GetAllSubconstructsCount() do
+        local id = I:GetSubConstructIdentifier(i)
+        if I:IsSpinBlock(id) == true then
+            local info = I:GetSubConstructInfo(id)
+            local name = info.CustomName
+            if jointNames[name] then
+                table.insert(spinBlocks, {id = id, info = info})
+            end
+        end
+    end
+
+    
+
+    -- construct the arm from the spinBlocks
+    I:GetSubConstructInfo()
+end
+
 
 function Update(I)
     local target = EasePosition(startPosistion, endPosition, Tick, 0, 25, 1, 2)

@@ -1,109 +1,5 @@
-function IdentityMatrix()
-    return {
-        {1, 0, 0},
-        {0, 1, 0},
-        {0, 0, 1}
-    }
-end
-
-function MatrixMult(a, b)
-    local result = {}
-    for i = 1, #a do
-        result[i] = {}
-        for j = 1, #b[1] do
-            result[i][j] = 0
-            for k = 1, #b do
-                result[i][j] = result[i][j] + a[i][k] * b[k][j]
-            end
-        end
-    end
-    return result
-end
-
-function MatrixVectorMult(m, v)
-    local result = {}
-    for i = 1, #m do
-        result[i] = 0
-        for j = 1, #v do
-            result[i] = result[i] + m[i][j] * v[j]
-        end
-    end
-    return result
-end
-
-function Distance(v1, v2)
-    local squared_distance = 0
-    for i = 1, #v1 do
-        squared_distance = squared_distance + (v1[i] - v2[i])^2
-    end
-    return math.sqrt(squared_distance)
-end
-
-function Subtract(v1, v2)
-    local result = {}
-    for i = 1, #v1 do
-        result[i] = v1[i] - v2[i]
-    end
-    return result
-end
-
-function Add(v1, v2)
-    local result = {}
-    for i = 1, #v1 do
-        result[i] = v1[i] + v2[i]
-    end
-    return result
-end
-
-function Length(v)
-    local squared_length = 0
-    for i = 1, #v do
-        squared_length = squared_length + v[i]^2
-    end
-    return math.sqrt(squared_length)
-end
-
-function UnitVector(v)
-    local length = Length(v)
-    if length == 0 then
-        return {0, 0, 0}
-    end
-    local result = {}
-    for i = 1, #v do
-        result[i] = v[i] / length
-    end
-    return result
-end
-
-function Multiply(v, scalar)
-    local result = {}
-    for i = 1, #v do
-        result[i] = v[i] * scalar
-    end
-    return result
-end
-
-function Dot(v1, v2)
-    local result = 0
-    for i = 1, #v1 do
-        result = result + v1[i] * v2[i]
-    end
-    return result
-end
-
-function Cross(v1, v2)
-    if #v1 == 2 and #v2 == 2 then
-        return v1[1] * v2[2] - v1[2] * v2[1]
-    elseif #v1 == 3 and #v2 == 3 then
-        return {
-            v1[2] * v2[3] - v1[3] * v2[2],
-            v1[3] * v2[1] - v1[1] * v2[3],
-            v1[1] * v2[2] - v1[2] * v2[1]
-        }
-    else
-        error("Cross product is only defined for 2D or 3D vectors")
-    end
-end
+require "Vector3"
+require "Matrix3"
 
 function Angle(v1, v2)
     local dot_product = Dot(v1, v2)
@@ -114,101 +10,33 @@ function Angle(v1, v2)
     return math.acos(dot_product / length_product)
 end
 
-function PerpendicularVector(v)
-    if math.abs(v[1]) > math.abs(v[3]) then
-        return {-v[2], v[1], 0}
-    else
-        return {0, -v[3], v[2]}
-    end
-end
-
--- Function to compute rotation matrix from two vectors
-function RotationFromTwoVectors(v1, v2)
-    local len1 = Length(v1)
-    local len2 = Length(v2)
-    if len1 == 0 or len2 == 0 then
-        return IdentityMatrix()
-    end
-    local dot = Dot(v1, v2)
-    local cos_theta = dot / (len1 * len2)
-    if math.abs(cos_theta - 1) < 1e-6 then
-        return IdentityMatrix()
-    elseif math.abs(cos_theta + 1) < 1e-6 then
-        -- 180 degree rotation
-        local perp = PerpendicularVector(v1)
-        return RotationMatrix(math.pi, perp)
-    else
-        local axis = Cross(v1, v2)
-        axis = UnitVector(axis)
-        local angle = math.acos(cos_theta)
-        return RotationMatrix(angle, axis)
-    end
-end
-
 function SignedAngleAroundAxis(v1, v2, axis)
     -- Project v1 and v2 onto the plane perpendicular to axis
-    local v1_proj = ProjectToPlane(v1, axis)
-    local v2_proj = ProjectToPlane(v2, axis)
+    local v1_proj = v1:projectToPlane(axis)
+    local v2_proj = v2:projectToPlane(axis)
 
     -- Check for degenerate cases (vectors aligned with axis)
-    local len_v1_proj = Length(v1_proj)
-    local len_v2_proj = Length(v2_proj)
+    local len_v1_proj = v1_proj:length()
+    local len_v2_proj = v2_proj:length()
     if len_v1_proj < 1e-6 or len_v2_proj < 1e-6 then
         return 0 -- Angle undefined; no adjustment needed
     end
 
     -- Normalize the projections
-    local u1 = Multiply(v1_proj, 1 / len_v1_proj)
-    local u2 = Multiply(v2_proj, 1 / len_v2_proj)
+    local u1 = v1_proj:normalize()
+    local u2 = v2_proj:normalize()
 
     -- Compute signed angle using atan2
-    local cross = Cross(u1, u2)
-    local theta = math.atan(Dot(cross, axis), Dot(u1, u2))
+    local cross = u1:cross(u2)
+    local theta = math.atan(cross:dot(axis), u1:dot(u2))
     return theta
-end
-
-function RotationMatrix(angle, axis)
-    local cos_angle = math.cos(angle)
-    local sin_angle = math.sin(angle)
-    local one_minus_cos = 1 - cos_angle
-
-    return {
-        {cos_angle + axis[1] * axis[1] * one_minus_cos                      ,             axis[1] * axis[2] * one_minus_cos - axis[3] * sin_angle,             axis[1] * axis[3] * one_minus_cos + axis[2] * sin_angle},
-        {            axis[2] * axis[1] * one_minus_cos + axis[3] * sin_angle, cos_angle + axis[2] * axis[2] * one_minus_cos                      ,             axis[2] * axis[3] * one_minus_cos - axis[1] * sin_angle},
-        {            axis[3] * axis[1] * one_minus_cos - axis[2] * sin_angle,             axis[3] * axis[2] * one_minus_cos + axis[1] * sin_angle, cos_angle + axis[3] * axis[3] * one_minus_cos}
-    }
-end
-
-function RotateVector(vector, angle, axis)
-    local rotation_matrix = RotationMatrix(angle, axis)
-    return {
-        rotation_matrix[1][1] * vector[1] + rotation_matrix[1][2] * vector[2] + rotation_matrix[1][3] * vector[3],
-        rotation_matrix[2][1] * vector[1] + rotation_matrix[2][2] * vector[2] + rotation_matrix[2][3] * vector[3],
-        rotation_matrix[3][1] * vector[1] + rotation_matrix[3][2] * vector[2] + rotation_matrix[3][3] * vector[3]
-    }
-end
-
-function RotateAround(vector, angle, axis, center)
-    local rotated = RotateVector(Subtract(vector, center), angle, axis)
-    return Add(rotated, center)
-end
-
-function RotatePointAroundAxis(v, angle, axis, center)
-    -- Rotate point p around axis through center by angle
-    local v = Subtract(v, center)
-    local v_rot = RotateVector(v, angle, axis)
-    return Add(center, v_rot)
-end
-
-function ProjectToPlane(v, normal)
-    return Subtract(v, Multiply(normal, Dot(v, normal)))
 end
 
 function Clamp(value, min, max)
     return math.max(min, math.min(value, max))
 end
 
-function round(num, decimal_places)
+function Round(num, decimal_places)
     local mult = 10^(decimal_places or 0)
     return math.floor(num * mult + 0.5) / mult
 end
@@ -242,3 +70,5 @@ function EasePosition(startPos, endPos, timer, a, b)
     local easing = Easing(timer, a, b)
     return Add(startPos, Multiply(v, easing))
 end
+
+function applyConstraints(targetDirection, )

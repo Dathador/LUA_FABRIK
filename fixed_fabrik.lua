@@ -311,7 +311,7 @@ function FABRIK.new()
         boneLengths = {},
         totalLength = 0,
         tolerance = 0.01,
-        maxIterations = 10
+        maxIterations = 100
     }, FABRIK)
 end
 
@@ -333,6 +333,30 @@ function FABRIK:addJoint(joint)
     return self
 end
 
+-- Calculate a basis for a joint based on its rotation axis
+function Joint:calculateBasis()
+    local up = self.worldAxisOfRotation:normalize()
+    
+    -- Find a perpendicular vector to 'up'
+    local right = Vector3.new(1, 0, 0)
+    if math.abs(up:dot(right)) > 0.9 then
+        right = Vector3.new(0, 1, 0)
+    end
+    
+    -- Make right perpendicular to up
+    right = right - up * right:dot(up)
+    right = right:normalize()
+    
+    -- Calculate forward as perpendicular to both up and right
+    local forward = up:cross(right)
+    
+    return {
+        right = right,
+        up = up,
+        forward = forward
+    }
+end
+
 -- Update world rotations and axis orientations from root to tip
 function FABRIK:updateWorldData()
     local worldRot = Matrix3.identity()
@@ -347,6 +371,13 @@ function FABRIK:updateWorldData()
         -- Pass down rotations to children
         worldRot = joint.worldRotation:clone()
     end
+end
+
+-- Project a point onto the plane defined by a point and normal
+local function projectPointOntoPlane(point, planePoint, planeNormal)
+    local v = point - planePoint
+    local dist = v:dot(planeNormal)
+    return point - planeNormal * dist
 end
 
 function FABRIK:solve(targetPosition, iterations)
@@ -368,16 +399,25 @@ function FABRIK:solve(targetPosition, iterations)
         initialDirections[i] = dir:clone()
     end
     
+    -- Update world data before solving to ensure correct constraints
+    self:updateWorldData()
+    
     -- Check if target is reachable
     local rootPos = positions[1]
     local distanceToTarget = rootPos:distance(targetPosition)
     
+    -- Get the rotation planes for each joint
+    local rotationPlanes = {}
+    for i = 1, numJoints do
+        local joint = self.joints[i]
+        rotationPlanes[i] = {
+            point = joint.position:clone(),
+            normal = joint.worldAxisOfRotation:normalize()
+        }
+    end
+    
     if distanceToTarget > self.totalLength then
         -- Target unreachable - just extend chain in best direction
-        local direction = (targetPosition - rootPos):normalize()
-        
-        -- Update world rotations/axes first since we need accurate world axes for constraints
-        self:updateWorldData()
         
         -- Recompute positions in forward direction with strict plane constraints
         positions[1] = rootPos:clone() -- Ensure root is fixed
@@ -385,15 +425,70 @@ function FABRIK:solve(targetPosition, iterations)
         for i = 1, numJoints - 1 do
             local joint = self.joints[i]
             
-            -- Apply constraints using world axis
-            local refDir = initialDirections[i]
-            local targetVec = (targetPosition - positions[i]):normalize()
-            
-            -- Apply rotation constraints in world space
-            local constrainedDir = joint:applyConstraints(targetVec, refDir)
-            
-            -- Position next joint using the strictly constrained direction
-            positions[i+1] = positions[i] + constrainedDir * self.boneLengths[i]
+            -- First joint: create rotation in the XY plane only (Z-axis rotation)
+            if i == 1 then
+                -- For first joint, directly calculate angle in XY plane
+                local targetDir = targetPosition - positions[1]
+                local targetXY = Vector3.new(targetDir.x, targetDir.y, 0):normalize()
+                
+                -- Calculate angle from X-axis
+                local angle = math.atan(targetXY.y, targetXY.x)
+                
+                -- Clamp to joint limits
+                angle = math.max(joint.minAngle, math.min(joint.maxAngle, angle))
+                joint.angle = angle
+                
+                -- Create rotation matrix for Z-axis rotation
+                joint.rotation = Matrix3.fromAxisAngle(Vector3.new(0, 0, 1), angle)
+                
+                -- Update world rotations before continuing
+                self:updateWorldData()
+                
+                -- Position next joint in XY plane
+                local rotatedDir = Vector3.new(math.cos(angle), math.sin(angle), 0)
+                positions[i+1] = positions[i] + rotatedDir * self.boneLengths[i]
+            else
+                -- For subsequent joints, rotate in the plane perpendicular to the joint's world axis
+                local basis = joint:calculateBasis()
+                
+                -- Create a target vector in joint's local space
+                local targetVec = (targetPosition - positions[i]):normalize()
+                
+                -- Project target onto rotation plane (perpendicular to world axis)
+                local axisComponent = basis.up * targetVec:dot(basis.up)
+                local targetInPlane = (targetVec - axisComponent):normalize()
+                
+                -- Get reference direction
+                local refDir = initialDirections[i]
+                local refInPlane = (refDir - basis.up * refDir:dot(basis.up)):normalize()
+                
+                -- Calculate angle between reference and target in plane
+                local dotProduct = math.max(-1, math.min(1, refInPlane:dot(targetInPlane)))
+                local angle = math.acos(dotProduct)
+                
+                -- Determine rotation direction
+                local cross = refInPlane:cross(targetInPlane)
+                if cross:dot(basis.up) < 0 then
+                    angle = -angle
+                end
+                
+                -- Clamp angle to joint limits
+                angle = math.max(joint.minAngle, math.min(joint.maxAngle, angle))
+                joint.angle = angle
+                
+                -- Create rotation matrix around world axis
+                joint.rotation = Matrix3.fromAxisAngle(basis.up, angle)
+                
+                -- Update world rotations for next joint
+                self:updateWorldData()
+                
+                -- Calculate constrained direction
+                local rotMatrix = Matrix3.fromAxisAngle(basis.up, angle)
+                local constrainedDir = rotMatrix:multiplyVector(refInPlane)
+                
+                -- Position next joint
+                positions[i+1] = positions[i] + constrainedDir * self.boneLengths[i]
+            end
         end
     else
         -- Target is reachable, use FABRIK iteration with strict plane constraints
@@ -405,34 +500,87 @@ function FABRIK:solve(targetPosition, iterations)
             positions[numJoints] = targetPosition:clone()
             
             for i = numJoints - 1, 1, -1 do
-                -- Standard FABRIK backward pass
+                -- Direction from next joint to current
                 local direction = (positions[i] - positions[i+1]):normalize()
+                
+                -- Standard FABRIK backward pass
                 positions[i] = positions[i+1] + direction * self.boneLengths[i]
+                
+                -- If not root joint, project onto parent's rotation plane
+                if i > 1 then
+                    local parentJoint = self.joints[i-1]
+                    local parentPlane = rotationPlanes[i-1]
+                    
+                    -- Ensure position stays on parent's rotation plane
+                    positions[i] = projectPointOntoPlane(positions[i], parentPlane.point, parentPlane.normal)
+                end
             end
             
             -- FORWARD PASS: Fix the root and work forward with strict constraints
             positions[1] = self.joints[1].position:clone() -- Reset root
             
-            -- Update world rotations and axes before applying constraints
-            self:updateWorldData()
-            
             for i = 1, numJoints - 1 do
                 local joint = self.joints[i]
                 
-                -- Get reference direction (from initial pose)
-                local refDir = initialDirections[i]
-                
-                -- Get target direction from backward pass
-                local targetDir = (positions[i+1] - positions[i]):normalize()
-                
-                -- Apply rotation constraints in world space
-                local constrainedDir = joint:applyConstraints(targetDir, refDir)
-                
-                -- Position the next joint using the constrained direction
-                positions[i+1] = positions[i] + constrainedDir * self.boneLengths[i]
-                
-                -- Update joint rotations for the next joint's constraint calculation
-                self:updateWorldData()
+                -- For first joint, only rotate around Z axis (XY plane)
+                if i == 1 then
+                    -- Calculate angle in XY plane
+                    local direction = positions[i+1] - positions[i]
+                    local angle = math.atan(direction.y, direction.x)
+                    
+                    -- Clamp to joint limits
+                    angle = math.max(joint.minAngle, math.min(joint.maxAngle, angle))
+                    joint.angle = angle
+                    
+                    -- Create rotation matrix for Z-axis rotation
+                    joint.rotation = Matrix3.fromAxisAngle(Vector3.new(0, 0, 1), angle)
+                    
+                    -- Position next joint in XY plane only
+                    local rotatedDir = Vector3.new(math.cos(angle), math.sin(angle), 0)
+                    positions[i+1] = positions[i] + rotatedDir * self.boneLengths[i]
+                else
+                    -- For subsequent joints, rotate in proper constraint plane
+                    -- Update world data for accurate constraints
+                    self:updateWorldData()
+                    
+                    -- Calculate the rotation plane for this joint
+                    local basis = joint:calculateBasis()
+                    
+                    -- Get direction from backward pass
+                    local backwardDir = positions[i+1] - positions[i]
+                    
+                    -- Project onto rotation plane to enforce constraints
+                    local axisComponent = basis.up * backwardDir:dot(basis.up)
+                    local dirInPlane = (backwardDir - axisComponent):normalize()
+                    
+                    -- Get reference direction
+                    local refDir = initialDirections[i]
+                    local refInPlane = (refDir - basis.up * refDir:dot(basis.up)):normalize()
+                    
+                    -- Calculate angle between reference and target in plane
+                    local dotProduct = math.max(-1, math.min(1, refInPlane:dot(dirInPlane)))
+                    local angle = math.acos(dotProduct)
+                    
+                    -- Determine rotation direction
+                    local cross = refInPlane:cross(dirInPlane)
+                    if cross:dot(basis.up) < 0 then
+                        angle = -angle
+                    end
+                    
+                    -- Clamp angle to joint limits
+                    angle = math.max(joint.minAngle, math.min(joint.maxAngle, angle))
+                    joint.angle = angle
+                    
+                    -- Create rotation matrix around world axis
+                    joint.rotation = Matrix3.fromAxisAngle(basis.up, angle)
+                    
+                    -- Calculate constrained direction
+                    local rotMatrix = Matrix3.fromAxisAngle(basis.up, angle)
+                    local constrainedDir = rotMatrix:multiplyVector(refInPlane)
+                    
+                    -- Position next joint
+                    positions[i+1] = positions[i] + constrainedDir * self.boneLengths[i]
+                end
             end
             
             -- Check if we're close enough to target
@@ -456,56 +604,43 @@ end
 local function createExample()
     -- Create example IK chain with joint constraints
     local solver = FABRIK.new()
-
-    local shoulder1 = Joint.new(
-        Vector3.new( 0, 0, 0),
-        Vector3.new(-1, 0, 0),  -- Z-axis rotation
-        -math.pi,            
-        math.pi              
-    )
-
-    local shoulder2 = Joint.new(
+    
+    -- Root joint (Z-axis rotation) - only allows rotation in XY plane
+    local root = Joint.new(
         Vector3.new(0, 0, 0),
         Vector3.new(0, 0, 1),  -- Z-axis rotation
-        -math.pi,            
-        math.pi              
+        -math.pi/4,            -- -45 degrees
+        math.pi/4              -- 45 degrees
+    )
+    
+    -- Middle joint (Y-axis rotation) - only allows rotation in XZ plane
+    local middle1 = Joint.new(
+        Vector3.new(1, 0, 0),
+        Vector3.new(0, 1, 0),  -- Y-axis rotation
+        -math.pi/3,            -- -60 degrees
+        math.pi/3              -- 60 degrees
     )
 
-    local shoulder3 = Joint.new(
-        Vector3.new(0, 0, 0),
-        Vector3.new(0, 1, 0),  -- Z-axis rotation
-        -math.pi,            
-        math.pi              
+    -- Middle joint (Y-axis rotation) - only allows rotation in XZ plane
+    local middle2 = Joint.new(
+        Vector3.new(2, 0, 0),
+        Vector3.new(0, 1, 0),  -- Y-axis rotation
+        -math.pi/3,            -- -60 degrees
+        math.pi/3              -- 60 degrees
     )
-
-    local elbow1 = Joint.new(
-        Vector3.new( 0,-5, 0),
-        Vector3.new(-1, 0, 0),  -- Y-axis rotation
-        0,            
-        math.pi/2              
-    )
-
-    local elbow2 = Joint.new(
-        Vector3.new(0,-5, 0),
-        Vector3.new(0,-1, 0),  -- X-axis rotation for variety
-        -math.pi/2,            
-        math.pi/2              
-    )
-
+    
     -- End joint (X-axis rotation) - different rotation axis for testing
     local end_joint = Joint.new(
-        Vector3.new(0,-10, 0),
-        Vector3.new(1,  0, 0),  -- X-axis rotation for variety
-        -math.pi/2,            
-        math.pi/2              
+        Vector3.new(3, 0, 0),
+        Vector3.new(1, 0, 0),  -- X-axis rotation for variety
+        -math.pi/2,            -- -90 degrees
+        math.pi/2              -- 90 degrees
     )
     
     -- Add joints to solver
-    solver:addJoint(shoulder1)
-    solver:addJoint(shoulder2)
-    solver:addJoint(shoulder3)
-    solver:addJoint(elbow1)
-    solver:addJoint(elbow2)
+    solver:addJoint(root)
+    solver:addJoint(middle1)
+    solver:addJoint(middle2)
     solver:addJoint(end_joint)
     
     return solver
@@ -516,7 +651,7 @@ local function demonstrateFABRIK()
     local solver = createExample()
     
     -- Target position
-    local target = Vector3.new(-6, 2, 4)
+    local target = Vector3.new(2.54126, 0.78234, 0.5)
     
     -- Print initial positions
     print("Initial positions:")
